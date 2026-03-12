@@ -1,11 +1,9 @@
-const XLSX = require('xlsx');
 const config = require('../config');
 const UserModel = require('../database/models/userModel');
 const fs = require('fs');
 const path = require('path');
 const { Parser } = require('json2csv');
 const csv = require('csv-parser');
-const axios = require('axios');
 
 // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
@@ -23,8 +21,8 @@ async function showAdminMainMenu(ctx, edit = false) {
         reply_markup: {
             inline_keyboard: [
                 [{ text: '📋 Список пользователей', callback_data: 'admin_list_users' }],
-                [{ text: '📤 Экспорт в Excel', callback_data: 'admin_export_csv' }],
-                [{ text: '📥 Импорт из Excel', callback_data: 'admin_import_csv' }],
+                [{ text: '📤 Экспорт в CSV', callback_data: 'admin_export_csv' }],
+                [{ text: '📥 Импорт из CSV', callback_data: 'admin_import_csv' }],
                 [{ text: '➕ Добавить пользователя', callback_data: 'admin_add_user' }],
                 [{ text: '🗑 Удалить пользователей', callback_data: 'admin_delete_users' }],
                 [{ text: '⚙️ Настройки', callback_data: 'admin_settings' }],
@@ -98,42 +96,27 @@ async function showUserList(ctx, page = 0) {
 
 // ==================== 2. ЭКСПОРТ В CSV ====================
 
-// ==================== 2. ЭКСПОРТ В EXCEL ====================
-
-async function exportToExcel(ctx) {
+async function exportToCSV(ctx) {
     UserModel.getAll((err, users) => {
         if (err) {
             return ctx.reply('❌ Ошибка получения данных');
         }
 
         try {
-            // Подготавливаем данные для Excel
-            const data = users.map(user => ({
-                'ID': user.user_id,
-                'Имя': user.first_name || '',
-                'Username': user.username || '',
-                'Подписка до': formatDate(user.subscription_end),
-                'Статус': user.payment_status || 'none',
-                'Дата регистрации': user.created_at ? new Date(user.created_at).toLocaleDateString('ru-RU') : ''
-            }));
+            const fields = ['user_id', 'username', 'first_name', 'subscription_end', 'payment_status', 'created_at'];
+            const json2csvParser = new Parser({ fields });
+            const csvData = json2csvParser.parse(users);
 
-            // Создаём книгу и лист
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.json_to_sheet(data);
-            XLSX.utils.book_append_sheet(wb, ws, 'Пользователи');
-
-            // Сохраняем временный файл
-            const filePath = path.join(__dirname, '../../exports', `users_${Date.now()}.xlsx`);
+            const filePath = path.join(__dirname, '../../exports', `users_${Date.now()}.csv`);
             const dir = path.dirname(filePath);
             
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
 
-            XLSX.writeFile(wb, filePath);
+            fs.writeFileSync(filePath, '\uFEFF' + csvData);
 
-            // Отправляем файл
-            ctx.replyWithDocument({ source: filePath, filename: 'users.xlsx' })
+            ctx.replyWithDocument({ source: filePath, filename: 'users.csv' })
                 .then(() => {
                     fs.unlinkSync(filePath);
                 })
@@ -143,130 +126,78 @@ async function exportToExcel(ctx) {
                 });
 
         } catch (e) {
-            console.error('Ошибка создания Excel:', e);
-            ctx.reply('❌ Ошибка при создании Excel');
+            console.error('Ошибка создания CSV:', e);
+            ctx.reply('❌ Ошибка при создании CSV');
         }
     });
 }
 
-// ==================== 3. ИМПОРТ ИЗ EXCEL/CSV ====================
+// ==================== 3. ИМПОРТ ИЗ CSV ====================
 
 async function startImport(ctx) {
     ctx.reply(
         '📥 **Импорт пользователей**\n\n' +
-        'Отправьте Excel-файл (.xlsx, .xls) или CSV со следующими колонками:\n' +
-        '`ID, Имя, Username, Подписка до, Статус`\n\n' +
-        'Пример Excel:\n' +
-        '| ID | Имя | Username | Подписка до | Статус |\n' +
-        '| 123 | Иван | ivan123 | 2025-12-31 | paid |\n\n' +
+        'Отправьте CSV-файл со следующими колонками:\n' +
+        '`user_id,username,first_name,subscription_end,payment_status`\n\n' +
         '⚠️ **ВНИМАНИЕ**: Это полностью заменит текущую базу данных!',
         { parse_mode: 'Markdown' }
     );
-    ctx.session = { awaiting: 'import_file' };
+    ctx.session = { awaiting: 'import_csv' };
 }
 
 async function processImport(ctx) {
     const file = ctx.message.document;
-    const fileName = file.file_name.toLowerCase();
     
-    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
-        return ctx.reply('❌ Пожалуйста, отправьте файл с расширением .xlsx, .xls или .csv');
+    if (!file.file_name.endsWith('.csv')) {
+        return ctx.reply('❌ Пожалуйста, отправьте файл с расширением .csv');
     }
 
-    try {
-        const fileLink = await ctx.telegram.getFileLink(file.file_id);
-        const fileExt = path.extname(file.file_name);
-        const filePath = path.join(__dirname, '../../imports', `import_${Date.now()}${fileExt}`);
-        const dir = path.dirname(filePath);
-        
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
+    const fileLink = await ctx.telegram.getFileLink(file.file_id);
+    const filePath = path.join(__dirname, '../../imports', `import_${Date.now()}.csv`);
+    const dir = path.dirname(filePath);
+    
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
 
-        // Скачиваем файл через axios
-        const response = await axios({
-            method: 'GET',
-            url: fileLink.href,
-            responseType: 'stream'
-        });
+    const writer = fs.createWriteStream(filePath);
+    const response = await fetch(fileLink.href);
+    response.body.pipe(writer);
 
-        const writer = fs.createWriteStream(filePath);
-        response.data.pipe(writer);
+    writer.on('finish', () => {
+        const results = [];
+        fs.createReadStream(filePath)
+            .pipe(csv())
+            .on('data', (data) => results.push(data))
+            .on('end', async () => {
+                try {
+                    const validUsers = results.filter(u => u.user_id && !isNaN(parseInt(u.user_id)));
+                    
+                    if (validUsers.length === 0) {
+                        return ctx.reply('❌ Не найдено валидных пользователей в CSV');
+                    }
 
-        writer.on('finish', () => {
-            try {
-                let validUsers = [];
+                    UserModel.replaceAll(validUsers, (err) => {
+                        if (err) {
+                            console.error('Ошибка импорта:', err);
+                            ctx.reply('❌ Ошибка при импорте данных');
+                        } else {
+                            ctx.reply(`✅ Импорт завершен! Загружено ${validUsers.length} пользователей.`);
+                        }
+                        
+                        fs.unlinkSync(filePath);
+                    });
 
-                if (fileExt === '.csv') {
-                    // Обработка CSV
-                    const results = [];
-                    fs.createReadStream(filePath)
-                        .pipe(csv())
-                        .on('data', (data) => results.push(data))
-                        .on('end', () => {
-                            validUsers = results.filter(u => u.ID && !isNaN(parseInt(u.ID))).map(u => ({
-                                user_id: parseInt(u.ID),
-                                first_name: u.Имя || 'Unknown',
-                                username: u.Username || null,
-                                subscription_end: u['Подписка до'] || null,
-                                payment_status: u.Статус || 'imported'
-                            }));
-                            processImportedUsers(ctx, validUsers, filePath);
-                        });
-                } else {
-                    // Обработка Excel
-                    const workbook = XLSX.readFile(filePath);
-                    const sheetName = workbook.SheetNames[0];
-                    const sheet = workbook.Sheets[sheetName];
-                    const data = XLSX.utils.sheet_to_json(sheet);
-
-                    validUsers = data.filter(u => u.ID && !isNaN(parseInt(u.ID))).map(u => ({
-                        user_id: parseInt(u.ID),
-                        first_name: u.Имя || 'Unknown',
-                        username: u.Username || null,
-                        subscription_end: u['Подписка до'] || null,
-                        payment_status: u.Статус || 'imported'
-                    }));
-
-                    processImportedUsers(ctx, validUsers, filePath);
+                } catch (e) {
+                    console.error('Ошибка обработки CSV:', e);
+                    ctx.reply('❌ Ошибка при обработке CSV');
+                    fs.unlinkSync(filePath);
                 }
+            });
+    });
 
-            } catch (e) {
-                console.error('Ошибка обработки файла:', e);
-                ctx.reply('❌ Ошибка при обработке файла');
-                fs.unlinkSync(filePath);
-            }
-        });
-
-        writer.on('error', (error) => {
-            console.error('Ошибка записи файла:', error);
-            ctx.reply('❌ Ошибка при сохранении файла');
-            fs.unlinkSync(filePath);
-        });
-
-    } catch (error) {
-        console.error('Ошибка скачивания файла:', error);
+    writer.on('error', () => {
         ctx.reply('❌ Ошибка при скачивании файла');
-    }
-}
-
-// Вспомогательная функция для обработки импортированных пользователей
-function processImportedUsers(ctx, validUsers, filePath) {
-    if (validUsers.length === 0) {
-        ctx.reply('❌ Не найдено валидных пользователей в файле');
-        fs.unlinkSync(filePath);
-        return;
-    }
-
-    UserModel.replaceAll(validUsers, (err) => {
-        if (err) {
-            console.error('Ошибка импорта:', err);
-            ctx.reply('❌ Ошибка при импорте данных');
-        } else {
-            ctx.reply(`✅ Импорт завершен! Загружено ${validUsers.length} пользователей.`);
-        }
-        
-        fs.unlinkSync(filePath);
     });
 }
 
@@ -341,39 +272,24 @@ async function processAddUser(ctx, text, bot) {
         return ctx.reply('❌ ID должен быть числом');
     }
 
-    // Обработка даты
-    let subscriptionEnd = null;
-    if (parts[3] && parts[3] !== '-') {
-        // Проверяем формат даты ГГГГ-ММ-ДД
-        const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-        if (!datePattern.test(parts[3])) {
-            return ctx.reply('❌ Неверный формат даты. Используйте ГГГГ-ММ-ДД (например 2025-12-31)');
-        }
-        subscriptionEnd = parts[3];
-    }
-
     const userData = {
         user_id: userId,
         first_name: parts[1] || 'Unknown',
         username: parts[2] && parts[2] !== '-' ? parts[2] : null,
-        subscription_end: subscriptionEnd,
-        payment_status: subscriptionEnd ? 'manual' : 'none'
+        subscription_end: parts[3] && parts[3] !== '-' ? parts[3] : null,
+        payment_status: 'manual'
     };
-
-    console.log('Добавляем пользователя:', userData); // для отладки
 
     UserModel.upsert(userData, (err) => {
         if (err) {
-            console.error('Ошибка при добавлении:', err);
             ctx.reply('❌ Ошибка при добавлении пользователя');
         } else {
-            ctx.reply(`✅ Пользователь ${userId} (${userData.first_name}) добавлен` + 
-                     (subscriptionEnd ? ` с подпиской до ${formatDate(subscriptionEnd)}` : ''));
+            ctx.reply(`✅ Пользователь ${userId} (${userData.first_name}) добавлен`);
             
-            if (subscriptionEnd) {
+            if (userData.subscription_end) {
                 bot.telegram.sendMessage(
                     userId,
-                    `Вам открыт доступ до ${formatDate(subscriptionEnd)}.`
+                    `Вам открыт доступ до ${formatDate(userData.subscription_end)}.`
                 ).catch(() => {});
             }
         }
@@ -419,7 +335,7 @@ module.exports = (bot) => {
         }
         // Экспорт CSV
         else if (data === 'admin_export_csv') {
-            await exportToExcel(ctx);
+            await exportToCSV(ctx);
         }
         // Импорт CSV
         else if (data === 'admin_import_csv') {
@@ -535,7 +451,7 @@ module.exports = (bot) => {
     // Обработчик документов
     bot.on('document', async (ctx) => {
         if (ctx.from.id !== config.ADMIN_ID) return;
-        if (ctx.session?.awaiting === 'import_file') {
+        if (ctx.session?.awaiting === 'import_csv') {
             await processImport(ctx);
         }
     });

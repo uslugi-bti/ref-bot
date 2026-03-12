@@ -2,16 +2,14 @@ const db = require('../db');
 
 const UserModel = {
     upsert: (user, callback) => {
-        const { id, username, first_name, subscription_end, payment_status } = user;
+        const { id, username, first_name } = user;
         db.run(
-            `INSERT INTO users (user_id, username, first_name, subscription_end, payment_status)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
+            `INSERT INTO users (user_id, username, first_name)
+             VALUES (?, ?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET
                 username = excluded.username,
-                first_name = excluded.first_name,
-                subscription_end = excluded.subscription_end,
-                payment_status = excluded.payment_status`,
-            [id, username, first_name, subscription_end, payment_status || 'none'],
+                first_name = excluded.first_name`,
+            [id, username, first_name],
             callback
         );
     },
@@ -95,6 +93,20 @@ const UserModel = {
             stmt.finalize();
             db.run('COMMIT', callback);
         });
+    },
+
+    getExpiringSoon: (days, callback) => {
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + days);
+        const futureDateStr = futureDate.toISOString().split('T')[0];
+        
+        db.all(
+            `SELECT * FROM users 
+            WHERE subscription_end = ? 
+            AND subscription_end > date('now')`,
+            [futureDateStr],
+            callback
+        );
     }
 };
 
