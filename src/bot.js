@@ -9,6 +9,6 @@ require('./handlers/start')(bot);
 require('./handlers/subscription')(bot);
 require('./handlers/admin')(bot);
 require('./handlers/callback')(bot);
-require('./handlers/admin')(bot);
+require('./handlers/adminPanel')(bot);
 
 module.exports = bot;

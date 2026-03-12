@@ -2,6 +2,9 @@ const UserModel = require('../database/models/userModel');
 const config = require('../config');
 const { START_MESSAGE } = require('../utils/constants');
 
+// Импортируем adminPanel
+const adminPanel = require('./adminPanel');
+
 module.exports = (bot) => {
     bot.start(async (ctx) => {
         const user = ctx.from;
@@ -12,20 +15,8 @@ module.exports = (bot) => {
         });
 
         if (userId === config.ADMIN_ID) {
-            // Админское приветствие
-            await ctx.reply(
-                `👑 Здравствуйте, администратор!\n\n` +
-                `Вы можете управлять настройками бота через админ-панель.`,
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '⚙️ Админ-панель', callback_data: 'admin_panel' }],
-                            [{ text: '📊 Статистика', callback_data: 'admin_stats' }],
-                            [{ text: '💰 Проверить баланс CryptoBot', callback_data: 'admin_balance' }]
-                        ]
-                    }
-                }
-            );
+            // Показываем расширенное меню из adminPanel
+            await adminPanel.showAdminMainMenu(ctx);
         } else {
             await ctx.reply(START_MESSAGE, {
                 reply_markup: {

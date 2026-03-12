@@ -16,7 +16,8 @@ const CryptoPay = {
                 asset: 'USDT',
                 amount: amount,
                 description: description,
-                paid_btn_name: 'openBot'
+                paid_btn_name: 'openBot',
+                paid_btn_url: 'https://t.me/G23clubbot?start=paid'
             });
             return response.data.result;
         } catch (error) {
