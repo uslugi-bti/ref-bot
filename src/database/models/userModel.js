@@ -95,6 +95,20 @@ const UserModel = {
             stmt.finalize();
             db.run('COMMIT', callback);
         });
+    },
+
+    getExpiringSoon: (days, callback) => {
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + days);
+        const futureDateStr = futureDate.toISOString().split('T')[0];
+        
+        db.all(
+            `SELECT * FROM users 
+            WHERE subscription_end = ? 
+            AND subscription_end > date('now')`,
+            [futureDateStr],
+            callback
+        );
     }
 };
 
