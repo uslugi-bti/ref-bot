@@ -47,4 +47,44 @@ module.exports = (bot) => {
             }
         });
     });
+
+    // ========== ТЕСТОВЫЕ КОМАНДЫ (только для админа) ==========
+
+    // Команда для тестирования уведомлений
+    bot.command('testnotify', async (ctx) => {
+        if (ctx.from.id !== config.ADMIN_ID) return;
+        
+        const days = parseInt(ctx.message.text.split(' ')[1]) || 5;
+        
+        const endDate = addDays(new Date(), days).toISOString().split('T')[0];
+        
+        UserModel.setSubscription(ctx.from.id, endDate, async (err) => {
+            if (err) {
+                ctx.reply('❌ Ошибка установки тестовой даты');
+            } else {
+                ctx.reply(`✅ Тестовая дата окончания: через ${days} дней (${endDate})`);
+            }
+        });
+    });
+
+    // Команда для принудительной проверки напоминаний
+    bot.command('testremind', async (ctx) => {
+        if (ctx.from.id !== config.ADMIN_ID) return;
+        
+        try {
+            const ReminderService = require('../services/reminderService');
+            const reminderService = new ReminderService(bot);
+            await reminderService.checkReminders();
+            ctx.reply('✅ Проверка напоминаний запущена');
+        } catch (e) {
+            ctx.reply('❌ Ошибка: ' + e.message);
+        }
+    });
+
+    // Команда для ручной оплаты (если нужно пропустить 10 секунд)
+    bot.command('forcepay', async (ctx) => {
+        if (ctx.from.id !== config.ADMIN_ID) return;
+        
+        ctx.reply('Используйте кнопку "Принудительно оплатить" при оплате');
+    });
 };
