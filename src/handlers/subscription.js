@@ -96,28 +96,43 @@ module.exports = (bot) => {
         }
     });
 
-    // Команда для мгновенного теста кика
+    // ========== ТЕСТОВАЯ КОМАНДА ДЛЯ КИКА ==========
     bot.command('testkicknow', async (ctx) => {
-        if (ctx.from.id !== config.ADMIN_ID) return;
+        // Проверяем, что это админ
+        /*if (ctx.from.id !== config.ADMIN_ID) {
+            return ctx.reply('⛔ Недостаточно прав');
+        }*/
+        
+        // Проверяем, указан ли ID группы
+        if (!config.GROUP_CHAT_ID) {
+            return ctx.reply('❌ GROUP_CHAT_ID не указан в .env');
+        }
         
         const userId = ctx.from.id;
         
-        if (!config.GROUP_CHAT_ID) {
-            return ctx.reply('❌ GROUP_CHAT_ID не указан');
-        }
-        
         try {
-            // Устанавливаем подписку на вчера
-            const expiredDate = addDays(new Date(), -1).toISOString().split('T')[0];
-            UserModel.setSubscription(userId, expiredDate, () => {});
+            // Показываем, что начали
+            await ctx.reply('🔄 Выполняю тестовый кик...');
             
-            // Кикаем
+            // Баним пользователя
             await bot.telegram.banChatMember(config.GROUP_CHAT_ID, userId);
+            
+            // Разбаниваем (чтобы мог зайти снова)
             await bot.telegram.unbanChatMember(config.GROUP_CHAT_ID, userId);
             
-            ctx.reply('✅ Кик выполнен! Проверь группу.');
-        } catch (e) {
-            ctx.reply('❌ Ошибка: ' + e.message);
+            // Уведомляем об успехе
+            await ctx.reply('✅ Тестовый кик выполнен! Проверьте группу — вас там больше нет.');
+            
+            // Для наглядности отправляем ссылку для возврата (если нужно)
+            const inviteLink = await bot.telegram.createChatInviteLink(config.GROUP_CHAT_ID, {
+                member_limit: 1,
+                expire_date: Math.floor(Date.now() / 1000) + 3600 // на 1 час
+            });
+            await ctx.reply(`🔗 Ссылка для возврата в группу (действует 1 час):\n${inviteLink.invite_link}`);
+            
+        } catch (error) {
+            console.error('Ошибка в testkicknow:', error);
+            await ctx.reply(`❌ Ошибка при кике: ${error.message}`);
         }
     });
 };
