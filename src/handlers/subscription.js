@@ -69,13 +69,15 @@ module.exports = (bot) => {
         
         const days = parseInt(ctx.message.text.split(' ')[1]) || 5;
         
+        // Если days отрицательное - устанавливаем прошедшую дату
         const endDate = addDays(new Date(), days).toISOString().split('T')[0];
         
         UserModel.setSubscription(ctx.from.id, endDate, async (err) => {
             if (err) {
                 ctx.reply('❌ Ошибка установки тестовой даты');
             } else {
-                ctx.reply(`✅ Тестовая дата окончания: через **${days}** дней (**${endDate}**)`, { parse_mode: 'Markdown' });
+                const status = days < 0 ? '❌ ПРОСРОЧЕНА' : '✅ активна';
+                ctx.reply(`✅ Тестовая дата окончания: через **${days}** дней (**${endDate}**) - ${status}`, { parse_mode: 'Markdown' });
             }
         });
     });
