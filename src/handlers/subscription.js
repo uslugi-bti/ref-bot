@@ -96,43 +96,27 @@ module.exports = (bot) => {
         }
     });
 
-    // ========== ТЕСТОВАЯ КОМАНДА ДЛЯ КИКА ==========
-    bot.command('testkicknow', async (ctx) => {
-        // Проверяем, что это админ
-        /*if (ctx.from.id !== config.ADMIN_ID) {
-            return ctx.reply('⛔ Недостаточно прав');
-        }*/
+    bot.command('testkick', async (ctx) => {
+        if (ctx.from.id !== config.ADMIN_ID) return;
         
-        // Проверяем, указан ли ID группы
-        if (!config.GROUP_CHAT_ID) {
-            return ctx.reply('❌ GROUP_CHAT_ID не указан в .env');
+        // Получаем ID из текста команды
+        const args = ctx.message.text.split(' ');
+        const userId = args[1] ? parseInt(args[1]) : null;
+        
+        if (!userId) {
+            return ctx.reply('❌ Укажите ID пользователя: /testkick 123456789');
         }
         
-        const userId = ctx.from.id;
+        if (!config.GROUP_CHAT_ID) {
+            return ctx.reply('❌ GROUP_CHAT_ID не указан');
+        }
         
         try {
-            // Показываем, что начали
-            await ctx.reply('🔄 Выполняю тестовый кик...');
-            
-            // Баним пользователя
             await bot.telegram.banChatMember(config.GROUP_CHAT_ID, userId);
-            
-            // Разбаниваем (чтобы мог зайти снова)
             await bot.telegram.unbanChatMember(config.GROUP_CHAT_ID, userId);
-            
-            // Уведомляем об успехе
-            await ctx.reply('✅ Тестовый кик выполнен! Проверьте группу — вас там больше нет.');
-            
-            // Для наглядности отправляем ссылку для возврата (если нужно)
-            const inviteLink = await bot.telegram.createChatInviteLink(config.GROUP_CHAT_ID, {
-                member_limit: 1,
-                expire_date: Math.floor(Date.now() / 1000) + 3600 // на 1 час
-            });
-            await ctx.reply(`🔗 Ссылка для возврата в группу (действует 1 час):\n${inviteLink.invite_link}`);
-            
-        } catch (error) {
-            console.error('Ошибка в testkicknow:', error);
-            await ctx.reply(`❌ Ошибка при кике: ${error.message}`);
+            ctx.reply(`✅ Пользователь ${userId} кикнут`);
+        } catch (e) {
+            ctx.reply(`❌ Ошибка: ${e.message}`);
         }
     });
 };
