@@ -95,4 +95,29 @@ module.exports = (bot) => {
             ctx.reply('❌ Ошибка: ' + e.message);
         }
     });
+
+    // Команда для мгновенного теста кика
+    bot.command('testkicknow', async (ctx) => {
+        if (ctx.from.id !== config.ADMIN_ID) return;
+        
+        const userId = ctx.from.id;
+        
+        if (!config.GROUP_CHAT_ID) {
+            return ctx.reply('❌ GROUP_CHAT_ID не указан');
+        }
+        
+        try {
+            // Устанавливаем подписку на вчера
+            const expiredDate = addDays(new Date(), -1).toISOString().split('T')[0];
+            UserModel.setSubscription(userId, expiredDate, () => {});
+            
+            // Кикаем
+            await bot.telegram.banChatMember(config.GROUP_CHAT_ID, userId);
+            await bot.telegram.unbanChatMember(config.GROUP_CHAT_ID, userId);
+            
+            ctx.reply('✅ Кик выполнен! Проверь группу.');
+        } catch (e) {
+            ctx.reply('❌ Ошибка: ' + e.message);
+        }
+    });
 };
