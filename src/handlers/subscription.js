@@ -97,7 +97,7 @@ module.exports = (bot) => {
     });
 
     bot.command('testkick', async (ctx) => {
-        if (ctx.from.id !== config.ADMIN_ID) return;
+        //if (ctx.from.id !== config.ADMIN_ID) return;
         
         // Получаем ID из текста команды
         const args = ctx.message.text.split(' ');
