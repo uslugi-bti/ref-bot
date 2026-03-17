@@ -1,122 +1,63 @@
 const UserModel = require('../database/models/userModel');
-// Временно используем мок для тестов
-let CryptoPay;
-try {
-    CryptoPay = require('../services/mockCryptoPay');
-    console.log('🧪 [BUY] Тестовый режим: используется MOCK CryptoPay');
-} catch (e) {
-    CryptoPay = require('../services/cryptoPay');
-}
+const CryptoPay = require('../services/cryptoPay');
 const config = require('../config');
-const { addDays } = require('../utils/helpers');
+const { addDaysToDate } = require('../utils/helpers');
 
 module.exports = (bot) => {
-    // Команда /buy
     bot.command('buy', async (ctx) => {
         const userId = ctx.from.id;
 
-        try {
-            const invoice = await CryptoPay.createInvoice(
-                config.SUBSCRIPTION_PRICE,
-                `Подписка на ${config.SUBSCRIPTION_DAYS} дней`
-            );
+        UserModel.get(userId, async (err, user) => {
+            if (err) {
+                return ctx.reply('❌ Ошибка получения данных');
+            }
 
-            // Сохраняем invoice_id в БД
-            UserModel.setInvoice(userId, invoice.result.invoice_id, (err) => {
-                if (err) console.error('Ошибка сохранения invoice:', err);
-            });
+            // ВЫБОР ЦЕНЫ
+            const price = user?.is_member ? config.MEMBER_PRICE : config.REGULAR_PRICE;
+            const userType = user?.is_member ? '🟢 СВОЙ' : '🔴 ЧУЖОЙ';
 
-            // Отправляем ссылку на оплату
-            await ctx.reply(
-                `🧪 **ТЕСТОВЫЙ РЕЖИМ**\n\n` +
-                `💰 Сумма: ${config.SUBSCRIPTION_PRICE}$\n` +
-                `📅 Срок: ${config.SUBSCRIPTION_DAYS} дней\n\n` +
-                `Через 10 секунд оплатится автоматически, или нажмите кнопку принудительно.`,
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '✅ Я оплатил', callback_data: `check_payment_${invoice.result.invoice_id}` }],
-                            [{ text: '⚡ Принудительно оплатить', callback_data: `force_pay_${invoice.result.invoice_id}` }],
-                            [{ text: '❌ Отмена', callback_data: 'cancel' }]
-                        ]
+            try {
+                const invoice = await CryptoPay.createInvoice(
+                    price,
+                    `Подписка на ${config.SUBSCRIPTION_DAYS} дней`
+                );
+
+                UserModel.setInvoice(userId, invoice.invoice_id, (err) => {
+                    if (err) console.error('Ошибка сохранения invoice:', err);
+                });
+
+                await ctx.reply(
+                    `💰 Сумма к оплате: **${price} USD**\n\n` +
+                    `Ссылка на оплату:\n${invoice.pay_url}\n\n` +
+                    `После оплаты нажмите "Я оплатил"`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Я оплатил', callback_data: `check_payment_${invoice.invoice_id}` }],
+                                [{ text: '❌ Отмена', callback_data: 'cancel' }]
+                            ]
+                        }
                     }
-                }
-            );
-        } catch (error) {
-            console.error('Ошибка создания счёта:', error);
-            await ctx.reply('❌ Ошибка при создании тестового счёта. Попробуйте позже.');
-        }
+                );
+            } catch (error) {
+                console.error('Ошибка создания счёта:', error);
+                ctx.reply('❌ Ошибка при создании счёта. Попробуйте позже.');
+            }
+        });
     });
 
-    // Команда /status
     bot.command('status', (ctx) => {
         UserModel.get(ctx.from.id, (err, user) => {
             if (err || !user || !user.subscription_end) {
                 ctx.reply('📭 У вас нет активной подписки.');
             } else {
                 const endDate = new Date(user.subscription_end).toLocaleDateString('ru-RU');
-                ctx.reply(`✅ Ваша подписка активна до **${endDate}**.`, { parse_mode: 'Markdown' });
+                const userType = user.is_member ? '🟢 СВОЙ' : '🔴 ЧУЖОЙ';
+                ctx.reply(
+                    `📅 Ваша подписка активна до **${endDate}**\n`
+                );
             }
         });
-    });
-
-    // ========== ТЕСТОВЫЕ КОМАНДЫ (только для админа) ==========
-
-    // Команда для тестирования уведомлений
-    bot.command('testnotify', async (ctx) => {
-        if (ctx.from.id !== config.ADMIN_ID) return;
-        
-        const days = parseInt(ctx.message.text.split(' ')[1]) || 5;
-        
-        // Если days отрицательное - устанавливаем прошедшую дату
-        const endDate = addDays(new Date(), days).toISOString().split('T')[0];
-        
-        UserModel.setSubscription(ctx.from.id, endDate, async (err) => {
-            if (err) {
-                ctx.reply('❌ Ошибка установки тестовой даты');
-            } else {
-                const status = days < 0 ? '❌ ПРОСРОЧЕНА' : '✅ активна';
-                ctx.reply(`✅ Тестовая дата окончания: через **${days}** дней (**${endDate}**) - ${status}`, { parse_mode: 'Markdown' });
-            }
-        });
-    });
-
-    // Команда для принудительной проверки напоминаний
-    bot.command('testremind', async (ctx) => {
-        if (ctx.from.id !== config.ADMIN_ID) return;
-        
-        try {
-            const ReminderService = require('../services/reminderService');
-            const reminderService = new ReminderService(bot);
-            await reminderService.checkReminders();
-            ctx.reply('✅ Проверка напоминаний запущена');
-        } catch (e) {
-            ctx.reply('❌ Ошибка: ' + e.message);
-        }
-    });
-
-    bot.command('testkick', async (ctx) => {
-        //if (ctx.from.id !== config.ADMIN_ID) return;
-        
-        // Получаем ID из текста команды
-        const args = ctx.message.text.split(' ');
-        const userId = args[1] ? parseInt(args[1]) : null;
-        
-        if (!userId) {
-            return ctx.reply('❌ Укажите ID пользователя: /testkick 123456789');
-        }
-        
-        if (!config.GROUP_CHAT_ID) {
-            return ctx.reply('❌ GROUP_CHAT_ID не указан');
-        }
-        
-        try {
-            await bot.telegram.banChatMember(config.GROUP_CHAT_ID, userId);
-            await bot.telegram.unbanChatMember(config.GROUP_CHAT_ID, userId);
-            ctx.reply(`✅ Пользователь ${userId} кикнут`);
-        } catch (e) {
-            ctx.reply(`❌ Ошибка: ${e.message}`);
-        }
     });
 };

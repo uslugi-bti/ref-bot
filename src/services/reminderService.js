@@ -62,48 +62,63 @@ class ReminderService {
             return;
         }
 
+        // Определяем статус пользователя для сообщения
+        const userType = user.is_member ? '🟢 свой' : '🔴 посторонний';
+        
         let message = '';
         let needReminder = false;
 
         // За 5 дней до окончания
         if (daysLeft === 5) {
             message = `⚠️ **Напоминание**\n\n` +
+                     `👤 Статус: ${userType}\n` +
                      `Ваша подписка закончится через **5 дней** (${new Date(user.subscription_end).toLocaleDateString('ru-RU')}).\n\n` +
+                     `💰 Цена продления для вас: **${user.is_member ? config.MEMBER_PRICE : config.REGULAR_PRICE} USD**\n\n` +
                      `Продлите подписку, чтобы не потерять доступ к каналу.`;
             needReminder = true;
         }
         // За 4 дня
         else if (daysLeft === 4) {
             message = `⚠️ **Напоминание**\n\n` +
+                     `👤 Статус: ${userType}\n` +
                      `До окончания подписки осталось **4 дня**.\n\n` +
+                     `💰 Цена продления: **${user.is_member ? config.MEMBER_PRICE : config.REGULAR_PRICE} USD**\n\n` +
                      `Не забудьте продлить доступ.`;
             needReminder = true;
         }
         // За 3 дня
         else if (daysLeft === 3) {
             message = `⚠️ **Напоминание**\n\n` +
+                     `👤 Статус: ${userType}\n` +
                      `Осталось **3 дня** подписки.\n\n` +
+                     `💰 Цена продления: **${user.is_member ? config.MEMBER_PRICE : config.REGULAR_PRICE} USD**\n\n` +
                      `Продлите сейчас, чтобы избежать перерыва в доступе.`;
             needReminder = true;
         }
         // За 2 дня
         else if (daysLeft === 2) {
             message = `⚠️ **Срочно!**\n\n` +
+                     `👤 Статус: ${userType}\n` +
                      `До окончания подписки осталось **2 дня**.\n\n` +
+                     `💰 Цена продления: **${user.is_member ? config.MEMBER_PRICE : config.REGULAR_PRICE} USD**\n\n` +
                      `Если не продлить, через 2 дня вы будете удалены из канала.`;
             needReminder = true;
         }
         // За 1 день
         else if (daysLeft === 1) {
             message = `🚨 **Последний день!**\n\n` +
+                     `👤 Статус: ${userType}\n` +
                      `Ваша подписка заканчивается **ЗАВТРА**.\n\n` +
+                     `💰 Цена продления: **${user.is_member ? config.MEMBER_PRICE : config.REGULAR_PRICE} USD**\n\n` +
                      `Продлите сегодня, чтобы остаться в канале.`;
             needReminder = true;
         }
         // В последний день (0 дней)
         else if (daysLeft === 0) {
             message = `⏰ **Сегодня последний день!**\n\n` +
+                     `👤 Статус: ${userType}\n` +
                      `Ваша подписка истекает **сегодня**.\n\n` +
+                     `💰 Цена продления: **${user.is_member ? config.MEMBER_PRICE : config.REGULAR_PRICE} USD**\n\n` +
                      `Если не продлите до полуночи, вы будете автоматически удалены из канала.`;
             needReminder = true;
         }
@@ -123,7 +138,7 @@ class ReminderService {
                 // Запоминаем, что сегодня уже отправляли
                 this.reminders[`${user.user_id}_${daysLeft}`] = this.getTodayDate();
                 
-                console.log(`✅ Reminder sent to user ${user.user_id} (${daysLeft} days left)`);
+                console.log(`✅ Reminder sent to user ${user.user_id} (${daysLeft} days left, ${user.is_member ? 'member' : 'regular'})`);
             } catch (e) {
                 console.error(`Ошибка отправки напоминания пользователю ${user.user_id}:`, e.message);
             }
@@ -135,7 +150,7 @@ class ReminderService {
         return new Date().toISOString().split('T')[0];
     }
 
-    // Очистка старых записей (можно вызвать раз в день)
+    // Очистка старых записей
     cleanupReminders() {
         const today = this.getTodayDate();
         for (const key in this.reminders) {

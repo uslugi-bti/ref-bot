@@ -27,7 +27,7 @@ async function showAdminMainMenu(ctx, edit = false) {
                 [{ text: '📥 Импорт из Excel', callback_data: 'admin_import_csv' }],
                 [{ text: '➕ Добавить пользователя', callback_data: 'admin_add_user' }],
                 [{ text: '🗑 Удалить пользователей', callback_data: 'admin_delete_users' }],
-                [{ text: '⚙️ Настройки', callback_data: 'admin_settings' }],
+                [{ text: '⚙️ Цены и сроки', callback_data: 'admin_prices' }],
                 [{ text: '📊 Статистика', callback_data: 'admin_stats' }]
             ]
         }
@@ -69,6 +69,11 @@ async function showUserList(ctx, page = 0) {
             message += `\n   🆔: ${user.user_id}`;
             message += `\n   📅 Подписка до: ${formatDate(user.subscription_end)}`;
             message += `\n   💳 Статус: ${user.payment_status || 'none'}`;
+            
+            // Добавляем статус участника
+            const memberStatus = user.is_member ? '🟢 СВОЙ' : '🔴 ЧУЖОЙ';
+            message += `\n   👤 Статус: ${memberStatus}`;
+            
             message += `\n\n`;
         });
 
@@ -76,6 +81,7 @@ async function showUserList(ctx, page = 0) {
             inline_keyboard: []
         };
 
+        // Кнопки навигации
         const navButtons = [];
         if (page > 0) {
             navButtons.push({ text: '◀️ Назад', callback_data: `admin_list_users_page_${page - 1}` });
@@ -96,8 +102,6 @@ async function showUserList(ctx, page = 0) {
     });
 }
 
-// ==================== 2. ЭКСПОРТ В CSV ====================
-
 // ==================== 2. ЭКСПОРТ В EXCEL ====================
 
 async function exportToExcel(ctx) {
@@ -107,13 +111,14 @@ async function exportToExcel(ctx) {
         }
 
         try {
-            // Подготавливаем данные для Excel
+            // Подготавливаем данные для Excel с новой колонкой "Свой/Чужой"
             const data = users.map(user => ({
                 'ID': user.user_id,
                 'Имя': user.first_name || '',
                 'Username': user.username || '',
                 'Подписка до': formatDate(user.subscription_end),
-                'Статус': user.payment_status || 'none',
+                'Статус оплаты': user.payment_status || 'none',
+                'Свой/Чужой': user.is_member ? 'СВОЙ' : 'ЧУЖОЙ',
                 'Дата регистрации': user.created_at ? new Date(user.created_at).toLocaleDateString('ru-RU') : ''
             }));
 
@@ -155,10 +160,10 @@ async function startImport(ctx) {
     ctx.reply(
         '📥 **Импорт пользователей**\n\n' +
         'Отправьте Excel-файл (.xlsx, .xls) или CSV со следующими колонками:\n' +
-        '`ID, Имя, Username, Подписка до, Статус`\n\n' +
+        '`ID, Имя, Username, Подписка до, Статус оплаты, Свой/Чужой`\n\n' +
         'Пример Excel:\n' +
-        '| ID | Имя | Username | Подписка до | Статус |\n' +
-        '| 123 | Иван | ivan123 | 2025-12-31 | paid |\n\n' +
+        '| ID | Имя | Username | Подписка до | Статус оплаты | Свой/Чужой |\n' +
+        '| 123 | Иван | ivan123 | 2025-12-31 | paid | СВОЙ |\n\n' +
         '⚠️ **ВНИМАНИЕ**: Это полностью заменит текущую базу данных!',
         { parse_mode: 'Markdown' }
     );
@@ -209,7 +214,8 @@ async function processImport(ctx) {
                                 first_name: u.Имя || 'Unknown',
                                 username: u.Username || null,
                                 subscription_end: u['Подписка до'] || null,
-                                payment_status: u.Статус || 'imported'
+                                payment_status: u['Статус оплаты'] || 'imported',
+                                is_member: u['Свой/Чужой'] === 'СВОЙ' ? 1 : 0
                             }));
                             processImportedUsers(ctx, validUsers, filePath);
                         });
@@ -225,7 +231,8 @@ async function processImport(ctx) {
                         first_name: u.Имя || 'Unknown',
                         username: u.Username || null,
                         subscription_end: u['Подписка до'] || null,
-                        payment_status: u.Статус || 'imported'
+                        payment_status: u['Статус оплаты'] || 'imported',
+                        is_member: u['Свой/Чужой'] === 'СВОЙ' ? 1 : 0
                     }));
 
                     processImportedUsers(ctx, validUsers, filePath);
@@ -320,10 +327,10 @@ async function startAddUser(ctx) {
     ctx.reply(
         '➕ **Добавление нового пользователя**\n\n' +
         'Введите данные в формате:\n' +
-        '`ID, Имя, Username, Дата окончания (ГГГГ-ММ-ДД)`\n\n' +
-        'Пример: `123456789, Иван Петров, ivan123, 2025-12-31`\n\n' +
+        '`ID, Имя, Username, Дата окончания (ГГГГ-ММ-ДД), Свой/Чужой (+/-)`\n\n' +
+        'Пример: `123456789, Иван Петров, ivan123, 2025-12-31, +`\n\n' +
         'Username и дату можно пропустить (поставьте `-`):\n' +
-        '`123456789, Иван Петров, -, -`',
+        '`123456789, Иван Петров, -, -, +`',
         { parse_mode: 'Markdown' }
     );
     ctx.session = { awaiting: 'add_user' };
@@ -332,8 +339,8 @@ async function startAddUser(ctx) {
 async function processAddUser(ctx, text, bot) {
     const parts = text.split(',').map(p => p.trim());
     
-    if (parts.length < 2) {
-        return ctx.reply('❌ Неверный формат. Используйте: ID, Имя, Username, Дата');
+    if (parts.length < 5) {
+        return ctx.reply('❌ Неверный формат. Используйте: ID, Имя, Username, Дата, Свой/Чужой (+/-)');
     }
 
     const userId = parseInt(parts[0]);
@@ -344,30 +351,31 @@ async function processAddUser(ctx, text, bot) {
     // Обработка даты
     let subscriptionEnd = null;
     if (parts[3] && parts[3] !== '-') {
-        // Проверяем формат даты ГГГГ-ММ-ДД
         const datePattern = /^\d{4}-\d{2}-\d{2}$/;
         if (!datePattern.test(parts[3])) {
-            return ctx.reply('❌ Неверный формат даты. Используйте ГГГГ-ММ-ДД (например 2025-12-31)');
+            return ctx.reply('❌ Неверный формат даты. Используйте ГГГГ-ММ-ДД');
         }
         subscriptionEnd = parts[3];
     }
 
+    // Обработка статуса "свой/чужой"
+    const isMember = parts[4] === '+' || parts[4].toLowerCase() === 'да' || parts[4].toLowerCase() === 'yes';
+
     const userData = {
-        user_id: userId,
+        id: userId,
         first_name: parts[1] || 'Unknown',
         username: parts[2] && parts[2] !== '-' ? parts[2] : null,
         subscription_end: subscriptionEnd,
-        payment_status: subscriptionEnd ? 'manual' : 'none'
+        payment_status: subscriptionEnd ? 'manual' : 'none',
+        is_member: isMember ? 1 : 0
     };
-
-    console.log('Добавляем пользователя:', userData); // для отладки
 
     UserModel.upsert(userData, (err) => {
         if (err) {
             console.error('Ошибка при добавлении:', err);
             ctx.reply('❌ Ошибка при добавлении пользователя');
         } else {
-            ctx.reply(`✅ Пользователь ${userId} (${userData.first_name}) добавлен` + 
+            ctx.reply(`✅ Пользователь ${userId} (${userData.first_name}) добавлен как **${isMember ? '🟢 СВОЙ' : '🔴 ЧУЖОЙ'}**` + 
                      (subscriptionEnd ? ` с подпиской до ${formatDate(subscriptionEnd)}` : ''));
             
             if (subscriptionEnd) {
@@ -381,12 +389,13 @@ async function processAddUser(ctx, text, bot) {
     });
 }
 
-// ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
+// ==================== НАСТРОЙКИ ЦЕН ====================
 
 function saveSettings() {
     const settingsPath = path.join(__dirname, '../settings.json');
     const settings = {
-        price: config.SUBSCRIPTION_PRICE,
+        member_price: config.MEMBER_PRICE,
+        regular_price: config.REGULAR_PRICE,
         days: config.SUBSCRIPTION_DAYS
     };
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
@@ -417,11 +426,26 @@ module.exports = (bot) => {
             const page = parseInt(data.split('_').pop());
             await showUserList(ctx, page);
         }
-        // Экспорт CSV
+        // Изменение статуса пользователя
+        else if (data.startsWith('admin_make_member_')) {
+            const targetUserId = parseInt(data.replace('admin_make_member_', ''));
+            UserModel.setMemberStatus(targetUserId, true, (err) => {
+                if (err) ctx.reply('❌ Ошибка');
+                else ctx.reply(`✅ Пользователь ${targetUserId} теперь 🟢 СВОЙ (скидка)`);
+            });
+        }
+        else if (data.startsWith('admin_make_regular_')) {
+            const targetUserId = parseInt(data.replace('admin_make_regular_', ''));
+            UserModel.setMemberStatus(targetUserId, false, (err) => {
+                if (err) ctx.reply('❌ Ошибка');
+                else ctx.reply(`✅ Пользователь ${targetUserId} теперь 🔴 ЧУЖОЙ (полная цена)`);
+            });
+        }
+        // Экспорт в Excel
         else if (data === 'admin_export_csv') {
             await exportToExcel(ctx);
         }
-        // Импорт CSV
+        // Импорт
         else if (data === 'admin_import_csv') {
             await startImport(ctx);
         }
@@ -435,57 +459,59 @@ module.exports = (bot) => {
         }
         // Статистика
         else if (data === 'admin_stats') {
-            const db = require('../database/db');
-            db.get(
-                `SELECT 
-                    COUNT(*) as total,
-                    SUM(CASE WHEN subscription_end > date('now') THEN 1 ELSE 0 END) as active,
-                    SUM(CASE WHEN subscription_end <= date('now') AND subscription_end IS NOT NULL THEN 1 ELSE 0 END) as expired
-                 FROM users`,
-                (err, row) => {
-                    if (err) {
-                        ctx.reply('❌ Ошибка получения статистики');
-                    } else {
-                        ctx.reply(
-                            `📊 **Статистика бота**\n\n` +
-                            `👥 Всего пользователей: ${row.total}\n` +
-                            `✅ Активных подписок: ${row.active || 0}\n` +
-                            `⏳ Истекших подписок: ${row.expired || 0}\n` +
-                            `💰 Текущая цена: ${config.SUBSCRIPTION_PRICE} USD\n` +
-                            `📅 Текущий срок: ${config.SUBSCRIPTION_DAYS} дней`,
-                            { parse_mode: 'Markdown' }
-                        );
-                    }
+            UserModel.getStats((err, row) => {
+                if (err) {
+                    ctx.reply('❌ Ошибка получения статистики');
+                } else {
+                    ctx.reply(
+                        `📊 **Статистика бота**\n\n` +
+                        `👥 Всего пользователей: ${row.total}\n` +
+                        `🟢 Своих: ${row.members || 0}\n` +
+                        `🔴 Чужих: ${row.nonmembers || 0}\n` +
+                        `✅ Активных подписок: ${row.active || 0}\n` +
+                        `⏳ Истекших подписок: ${row.expired || 0}\n\n` +
+                        `💰 Цена для своих: ${config.MEMBER_PRICE} USD\n` +
+                        `💰 Цена для чужих: ${config.REGULAR_PRICE} USD\n` +
+                        `📅 Срок: ${config.SUBSCRIPTION_DAYS} дней`,
+                        { parse_mode: 'Markdown' }
+                    );
                 }
-            );
+            });
         }
-        // Настройки
-        else if (data === 'admin_settings') {
+        // Настройки цен
+        else if (data === 'admin_prices') {
             ctx.reply(
-                '⚙️ **Настройки**\n\n' +
-                `💰 Цена: ${config.SUBSCRIPTION_PRICE} USD\n` +
+                '⚙️ **Настройки цен**\n\n' +
+                `🟢 СВОИ: ${config.MEMBER_PRICE} USD\n` +
+                `🔴 ЧУЖИЕ: ${config.REGULAR_PRICE} USD\n` +
                 `📅 Срок: ${config.SUBSCRIPTION_DAYS} дней\n\n` +
-                'Используйте кнопки ниже:',
+                'Что изменить?',
                 {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: '💰 Изменить цену', callback_data: 'admin_change_price' }],
-                            [{ text: '📅 Изменить срок', callback_data: 'admin_change_days' }],
+                            [{ text: '💰 Цена для СВОИХ', callback_data: 'admin_change_member_price' }],
+                            [{ text: '💰 Цена для ЧУЖИХ', callback_data: 'admin_change_regular_price' }],
+                            [{ text: '📅 Срок подписки', callback_data: 'admin_change_days' }],
                             [{ text: '🔙 Назад', callback_data: 'admin_back_to_main' }]
                         ]
                     }
                 }
             );
         }
-        // Изменение цены
-        else if (data === 'admin_change_price') {
-            ctx.reply('💰 Введите **новую цену** в USD (только число, например 10):', { parse_mode: 'Markdown' });
-            ctx.session = { awaiting: 'change_price' };
+        // Изменение цены для своих
+        else if (data === 'admin_change_member_price') {
+            ctx.reply('💰 Введите **новую цену для СВОИХ** в USD (только число):', { parse_mode: 'Markdown' });
+            ctx.session = { awaiting: 'change_member_price' };
+        }
+        // Изменение цены для чужих
+        else if (data === 'admin_change_regular_price') {
+            ctx.reply('💰 Введите **новую цену для ЧУЖИХ** в USD (только число):', { parse_mode: 'Markdown' });
+            ctx.session = { awaiting: 'change_regular_price' };
         }
         // Изменение срока
         else if (data === 'admin_change_days') {
-            ctx.reply('📅 Введите **новый срок** подписки в днях (только число, например 30):', { parse_mode: 'Markdown' });
+            ctx.reply('📅 Введите **новый срок** подписки в днях (только число):', { parse_mode: 'Markdown' });
             ctx.session = { awaiting: 'change_days' };
         }
 
@@ -510,14 +536,24 @@ module.exports = (bot) => {
         else if (ctx.session.awaiting === 'add_user') {
             await processAddUser(ctx, text, bot);
         }
-        else if (ctx.session.awaiting === 'change_price') {
+        else if (ctx.session.awaiting === 'change_member_price') {
             const price = parseFloat(text);
             if (isNaN(price) || price <= 0) {
                 return ctx.reply('❌ Введите положительное число');
             }
-            config.SUBSCRIPTION_PRICE = price;
+            config.MEMBER_PRICE = price;
             saveSettings();
-            ctx.reply(`✅ Цена изменена на ${price} USD`);
+            ctx.reply(`✅ Цена для СВОИХ изменена на ${price} USD`);
+            ctx.session = null;
+        }
+        else if (ctx.session.awaiting === 'change_regular_price') {
+            const price = parseFloat(text);
+            if (isNaN(price) || price <= 0) {
+                return ctx.reply('❌ Введите положительное число');
+            }
+            config.REGULAR_PRICE = price;
+            saveSettings();
+            ctx.reply(`✅ Цена для ЧУЖИХ изменена на ${price} USD`);
             ctx.session = null;
         }
         else if (ctx.session.awaiting === 'change_days') {
