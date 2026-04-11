@@ -12,7 +12,6 @@ function initUserHandler(bot) {
   telegramService = new TelegramService(bot);
 }
 
-// Главное меню пользователя
 async function showUserMenu(userId) {
   const user = await UserModel.getById(userId);
   const prices = await SettingModel.getAllPrices();
@@ -29,12 +28,7 @@ async function showUserMenu(userId) {
     
     await telegramService.sendKeyboard(
       userId,
-      `🔒 *Доступ к закрытому каналу*\n\n` +
-      `Вы не являетесь участником нашего клуба.\n` +
-      `Для получения доступа необходимо оплатить единоразовый взнос: *${entryPrice} USDT*\n\n` +
-      `💳 *Реквизиты для оплаты:*\n` +
-      `\`\`\`\n${prices.payment_details}\n\`\`\`\n\n` +
-      `После оплаты нажмите кнопку "Я оплатил"`,
+      `🔒 Доступ к закрытому каналу\n\nВы не являетесь участником нашего клуба.\nДля получения доступа необходимо оплатить единоразовый взнос: ${entryPrice} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nПосле оплаты нажмите кнопку "Я оплатил"`,
       keyboard.reply_markup
     );
     return;
@@ -55,26 +49,14 @@ async function showUserMenu(userId) {
   let keyboardButtons = [];
 
   if (!user.entry_paid) {
-    message = `🔒 *Доступ к закрытому каналу*\n\n` +
-              `Вы еще не оплатили единоразовый вход.\n` +
-              `Стоимость входа: *${entryPrice} USDT*\n\n` +
-              `💳 *Реквизиты для оплаты:*\n` +
-              `\`\`\`\n${prices.payment_details}\n\`\`\`\n\n` +
-              `После оплаты нажмите кнопку "Я оплатил"`;
+    message = `🔒 Доступ к закрытому каналу\n\nВы еще не оплатили единоразовый вход.\nСтоимость входа: ${entryPrice} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nПосле оплаты нажмите кнопку "Я оплатил"`;
     keyboardButtons = [
       [{ text: `💰 Я оплатил (${entryPrice} USDT)`, callback_data: `submit_payment_entry` }]
     ];
   } 
   else if (isKicked || isPenalty || isExpired) {
     const totalPrice = price1m + penaltyPrice;
-    message = `⚠️ *Ваша подписка истекла / вы были исключены*\n\n` +
-              `У вас есть возможность вернуться, но со штрафом:\n\n` +
-              `💰 Продление на ${subscriptionDays} дней: *${price1m} USDT*\n` +
-              `⚡️ Штраф: *${penaltyPrice} USDT*\n` +
-              `💵 *ИТОГО: ${totalPrice} USDT*\n\n` +
-              `💳 *Реквизиты для оплаты:*\n` +
-              `\`\`\`\n${prices.payment_details}\n\`\`\`\n\n` +
-              `После оплаты нажмите кнопку "Я оплатил"`;
+    message = `⚠️ Ваша подписка истекла / вы были исключены\n\nУ вас есть возможность вернуться, но со штрафом:\n\n💰 Продление на ${subscriptionDays} дней: ${price1m} USDT\n⚡️ Штраф: ${penaltyPrice} USDT\n💵 ИТОГО: ${totalPrice} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nПосле оплаты нажмите кнопку "Я оплатил"`;
     keyboardButtons = [
       [{ text: `⚠️ Я оплатил со штрафом (${totalPrice} USDT)`, callback_data: `submit_payment_penalty` }]
     ];
@@ -83,15 +65,7 @@ async function showUserMenu(userId) {
     const endDate = moment(user.subscription_end).format('DD.MM.YYYY');
     const daysLeft = moment(user.subscription_end).diff(moment(), 'days');
     
-    message = `✅ *Ваш статус: АКТИВЕН*\n\n` +
-              `👤 Вы в статусе "СВОЙ" (навсегда)\n` +
-              `📅 Подписка до: *${endDate}* (осталось ${daysLeft} дней)\n\n` +
-              `💰 *Цены продления:*\n` +
-              `• На ${subscriptionDays} дней: *${price1m} USDT*\n` +
-              `• На ${subscriptionDays * 3} дней: *${price3m} USDT*\n\n` +
-              `💳 *Реквизиты для оплаты:*\n` +
-              `\`\`\`\n${prices.payment_details}\n\`\`\`\n\n` +
-              `Выберите период продления и нажмите "Я оплатил" после перевода:`;
+    message = `✅ Ваш статус: АКТИВЕН\n\n👤 Вы в статусе "СВОЙ" (навсегда)\n📅 Подписка до: ${endDate} (осталось ${daysLeft} дней)\n\n💰 Цены продления:\n• На ${subscriptionDays} дней: ${price1m} USDT\n• На ${subscriptionDays * 3} дней: ${price3m} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nВыберите период продления и нажмите "Я оплатил" после перевода:`;
     
     keyboardButtons = [
       [{ text: `🔄 Я оплатил (1 месяц — ${price1m} USDT)`, callback_data: `submit_payment_renew_1m` }],
@@ -108,16 +82,12 @@ async function showUserMenu(userId) {
   await telegramService.sendKeyboard(userId, message, keyboard.reply_markup);
 }
 
-// Обработка нажатия "Я оплатил"
 async function handlePaymentSubmit(userId, paymentType) {
-  // Проверка на спам
   const canRequest = await UserModel.canRequestPaymentConfirmation(userId, 10);
   if (!canRequest) {
     await telegramService.sendMessage(
       userId,
-      `⏳ *Вы уже отправляли заявку на оплату недавно*\n\n` +
-      `Пожалуйста, подождите 10 минут перед повторной отправкой.\n` +
-      `Если вы уже оплатили, администратор скоро проверит вашу оплату.`
+      `⏳ Вы уже отправляли заявку на оплату недавно\n\nПожалуйста, подождите 10 минут перед повторной отправкой.\nЕсли вы уже оплатили, администратор скоро проверит вашу оплату.`
     );
     return;
   }
@@ -159,10 +129,8 @@ async function handlePaymentSubmit(userId, paymentType) {
       return;
   }
   
-  // Обновляем время последнего запроса
   await UserModel.updateLastPaymentRequest(userId);
   
-  // Создаем заявку
   const request = await createPaymentRequest(userId, type, amount);
   
   if (!request.success) {
@@ -170,18 +138,11 @@ async function handlePaymentSubmit(userId, paymentType) {
     return;
   }
   
-  // Уведомляем пользователя
   await telegramService.sendMessage(
     userId,
-    `✅ *Заявка на оплату отправлена!*\n\n` +
-    `Тип: ${typeDisplay}\n` +
-    `Сумма: ${amount} USDT\n\n` +
-    `⏳ Администратор проверит оплату в ближайшее время.\n` +
-    `После подтверждения вы получите уведомление и доступ к каналу.\n\n` +
-    `⚠️ Не отправляйте повторную заявку, чтобы не сбить очередь.`
+    `✅ Заявка на оплату отправлена!\n\nТип: ${typeDisplay}\nСумма: ${amount} USDT\n\n⏳ Администратор проверит оплату в ближайшее время.\nПосле подтверждения вы получите уведомление и доступ к каналу.\n\n⚠️ Не отправляйте повторную заявку, чтобы не сбить очередь.`
   );
   
-  // Уведомляем админа
   await notifyAdminAboutPayment(userId, type, amount);
 }
 

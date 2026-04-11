@@ -16,7 +16,6 @@ function initPaymentHandler(bot) {
 async function createPaymentRequest(userId, type, amount) {
   const db = getDb();
   
-  // Проверяем, нет ли уже pending заявки
   const existing = await db.get(`
     SELECT * FROM payment_requests 
     WHERE user_id = ? AND status = 'pending'
@@ -26,7 +25,6 @@ async function createPaymentRequest(userId, type, amount) {
     return { success: false, error: 'У вас уже есть активная заявка. Дождитесь обработки.' };
   }
   
-  // Создаем новую заявку
   await db.run(`
     INSERT INTO payment_requests (user_id, amount, type, status)
     VALUES (?, ?, ?, ?)
@@ -44,21 +42,34 @@ async function notifyAdminAboutPayment(userId, type, amount) {
   const user = await UserModel.getById(userId);
   const prices = await SettingModel.getAllPrices();
   
+  // Проверка на существование пользователя
+  if (!user) {
+    console.error(`User ${userId} not found in database`);
+    await telegramService.sendMessage(
+      process.env.ADMIN_ID,
+      `⚠️ Ошибка: пользователь ${userId} не найден в БД при создании заявки на оплату`
+    );
+    return;
+  }
+  
   const typeText = {
-    'entry': '💎 Вход в клуб',
-    'renew_1m': '🔄 Продление (1 месяц)',
-    'renew_3m': '🔄 Продление (3 месяца)',
-    'renew_with_penalty': '⚠️ Восстановление со штрафом'
+    'entry': 'Вход в клуб',
+    'renew_1m': 'Продление (1 месяц)',
+    'renew_3m': 'Продление (3 месяца)',
+    'renew_with_penalty': 'Восстановление со штрафом'
   }[type] || 'Оплата';
   
+  const userName = user.first_name || 'Без имени';
+  const userLogin = user.username || 'no_username';
+  
   const message = 
-    `💰 *НОВАЯ ЗАЯВКА НА ОПЛАТУ*\n\n` +
+    `💰 НОВАЯ ЗАЯВКА НА ОПЛАТУ\n\n` +
     `${typeText}\n` +
-    `👤 Пользователь: ${user.first_name || 'Без имени'} (@${user.username || 'no_username'})\n` +
+    `👤 Пользователь: ${userName} (@${userLogin})\n` +
     `🆔 ID: ${userId}\n` +
     `💵 Сумма: ${amount} USDT\n\n` +
-    `📝 *Реквизиты для оплаты:*\n` +
-    `\`\`\`\n${prices.payment_details}\n\`\`\`\n\n` +
+    `📝 Реквизиты для оплаты:\n` +
+    `${prices.payment_details}\n\n` +
     `❗️ После получения оплаты нажмите "Подтвердить"`;
   
   const keyboard = {
@@ -73,7 +84,6 @@ async function notifyAdminAboutPayment(userId, type, amount) {
   };
   
   await telegramService.sendKeyboard(process.env.ADMIN_ID, message, keyboard.reply_markup);
-  await telegramService.sendMessage(process.env.ADMIN_ID, `🔗 Заявка #${type}_${userId}`, 'Markdown');
 }
 
 // Подтверждение оплаты админом
@@ -88,7 +98,6 @@ async function approvePayment(userId, type) {
     return false;
   }
   
-  // Обновляем статус заявки
   await db.run(`
     UPDATE payment_requests 
     SET status = 'approved', admin_action = 'approved', processed_at = CURRENT_TIMESTAMP
@@ -103,39 +112,29 @@ async function approvePayment(userId, type) {
     case 'entry':
       newEndDate = moment().add(subscriptionDays, 'days').format('YYYY-MM-DD');
       await UserModel.updateSubscription(userId, newEndDate, true);
-      message = `✅ *Оплата подтверждена!*\n\n` +
-                `Ваш вход в клуб активирован!\n` +
-                `Подписка до: ${newEndDate}\n\n` +
-                `🎉 Добро пожаловать!`;
+      message = `✅ Оплата подтверждена!\n\nВаш вход в клуб активирован!\nПодписка до: ${newEndDate}\n\n🎉 Добро пожаловать!`;
       needInvite = true;
       break;
       
     case 'renew_1m':
       newEndDate = await UserModel.extendSubscription(userId, subscriptionDays, false);
-      message = `✅ *Подписка продлена!*\n\n` +
-                `Новая дата окончания: ${newEndDate}\n\n` +
-                `Спасибо, что остаетесь с нами!`;
+      message = `✅ Подписка продлена!\n\nНовая дата окончания: ${newEndDate}\n\nСпасибо, что остаетесь с нами!`;
       break;
       
     case 'renew_3m':
       newEndDate = await UserModel.extendSubscription(userId, subscriptionDays * 3, false);
-      message = `✅ *Подписка продлена на 3 месяца!*\n\n` +
-                `Новая дата окончания: ${newEndDate}`;
+      message = `✅ Подписка продлена на 3 месяца!\n\nНовая дата окончания: ${newEndDate}`;
       break;
       
     case 'renew_with_penalty':
       newEndDate = await UserModel.extendSubscription(userId, subscriptionDays, true);
-      message = `⚠️ *Подписка восстановлена со штрафом*\n\n` +
-                `Новая дата окончания: ${newEndDate}\n\n` +
-                `В следующий раз не опаздывайте!`;
+      message = `⚠️ Подписка восстановлена со штрафом\n\nНовая дата окончания: ${newEndDate}\n\nВ следующий раз не опаздывайте!`;
       needInvite = true;
       break;
   }
   
-  // Отправляем сообщение пользователю
   await telegramService.sendMessage(userId, message);
   
-  // Если нужно отправить инвайт ссылку
   if (needInvite) {
     const inviteLink = await telegramService.createInviteLink(userId);
     if (inviteLink) {
@@ -143,7 +142,6 @@ async function approvePayment(userId, type) {
     }
   }
   
-  // Уведомляем админа
   await telegramService.sendMessage(
     process.env.ADMIN_ID,
     `✅ Оплата подтверждена для пользователя ${userId} (${type})`
@@ -162,22 +160,17 @@ async function rejectPayment(userId) {
     return false;
   }
   
-  // Обновляем статус заявки
   await db.run(`
     UPDATE payment_requests 
     SET status = 'rejected', admin_action = 'rejected', processed_at = CURRENT_TIMESTAMP
     WHERE user_id = ? AND status = 'pending'
   `, [userId]);
   
-  // Уведомляем пользователя
   await telegramService.sendMessage(
     userId,
-    `❌ *Ваша заявка на оплату отклонена*\n\n` +
-    `Пожалуйста, свяжитесь с администратором для уточнения деталей.\n` +
-    `Причина: оплата не подтверждена.`
+    `❌ Ваша заявка на оплату отклонена\n\nПожалуйста, свяжитесь с администратором для уточнения деталей.\nПричина: оплата не подтверждена.`
   );
   
-  // Уведомляем админа
   await telegramService.sendMessage(
     process.env.ADMIN_ID,
     `❌ Заявка отклонена для пользователя ${userId}`

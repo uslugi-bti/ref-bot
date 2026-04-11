@@ -6,19 +6,16 @@ class TelegramService {
     this.groupChatId = process.env.GROUP_CHAT_ID;
   }
 
-  // Создание пригласительной ссылки (одноразовой)
   async createInviteLink(userId) {
     try {
-      // Создаем одноразовую ссылку с ограничением на 1 участника
       const inviteLink = await this.bot.telegram.createChatInviteLink(
         this.groupChatId,
         {
           member_limit: 1,
-          expire_date: Math.floor(Date.now() / 1000) + 3600, // 1 час
+          expire_date: Math.floor(Date.now() / 1000) + 3600,
         }
       );
 
-      // Сохраняем ссылку в БД
       const db = getDb();
       await db.run(`
         INSERT OR REPLACE INTO invite_links (user_id, link)
@@ -32,16 +29,11 @@ class TelegramService {
     }
   }
 
-  // Отправить пользователю пригласительную ссылку
   async sendInviteLink(userId, inviteLink) {
     try {
       await this.bot.telegram.sendMessage(
         userId,
-        `🎉 *Доступ к каналу получен!*\n\n` +
-        `Ваша персональная ссылка для входа (действительна 1 час, только для вас):\n` +
-        `${inviteLink}\n\n` +
-        `⚠️ Ссылка одноразовая! После использования станет недействительной.`,
-        { parse_mode: 'Markdown' }
+        `🎉 Доступ к каналу получен!\n\nВаша персональная ссылка для входа (действительна 1 час, только для вас):\n${inviteLink}\n\n⚠️ Ссылка одноразовая! После использования станет недействительной.`
       );
       return true;
     } catch (error) {
@@ -50,11 +42,9 @@ class TelegramService {
     }
   }
 
-  // Кикнуть пользователя из канала
   async kickUser(userId) {
     try {
       await this.bot.telegram.banChatMember(this.groupChatId, userId);
-      // Разбан, чтобы можно было пригласить снова
       await this.bot.telegram.unbanChatMember(this.groupChatId, userId);
       console.log(`✅ Kicked user ${userId} from channel`);
       return true;
@@ -64,17 +54,16 @@ class TelegramService {
     }
   }
 
-  async sendMessage(userId, text, parseMode = 'HTML') {
+  async sendMessage(userId, text) {
     try {
-        await this.bot.telegram.sendMessage(userId, text, { parse_mode: parseMode });
-        return true;
+      await this.bot.telegram.sendMessage(userId, text);
+      return true;
     } catch (error) {
-        console.error(`Send message to ${userId} error:`, error);
-        return false;
+      console.error(`Send message to ${userId} error:`, error);
+      return false;
     }
-    }
+  }
 
-  // Проверить, является ли пользователь участником канала
   async isMember(userId) {
     try {
       const chatMember = await this.bot.telegram.getChatMember(this.groupChatId, userId);
@@ -85,27 +74,24 @@ class TelegramService {
     }
   }
 
-  // Отправить уведомление админу
   async notifyAdmin(message) {
     const adminId = process.env.ADMIN_ID;
     try {
-      await this.bot.telegram.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+      await this.bot.telegram.sendMessage(adminId, message);
     } catch (error) {
       console.error('Notify admin error:', error);
     }
   }
 
-  // Отправить клавиатуру пользователю
-  async sendKeyboard(userId, text, keyboard, parseMode = 'HTML') {
+  async sendKeyboard(userId, text, keyboard) {
     try {
-        await this.bot.telegram.sendMessage(userId, text, {
-        parse_mode: parseMode,
+      await this.bot.telegram.sendMessage(userId, text, {
         reply_markup: keyboard,
-        });
+      });
     } catch (error) {
-        console.error(`Send keyboard to ${userId} error:`, error);
+      console.error(`Send keyboard to ${userId} error:`, error);
     }
-    }
+  }
 }
 
 module.exports = TelegramService;
