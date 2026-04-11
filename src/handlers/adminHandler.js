@@ -196,21 +196,10 @@ async function exportToExcel(userId) {
   await telegramService.sendMessage(userId, '✅ Экспорт завершен!');
 }
 
-// Статистика
+// Статистика (исправленная — без payments)
 async function showStats(userId) {
   const stats = await UserModel.getStats();
   const prices = await SettingModel.getAllPrices();
-  
-  // Дополнительная статистика по платежам
-  const { getDb } = require('../database/db');
-  const db = getDb();
-  
-  const totalPayments = await db.get('SELECT COUNT(*) as count, SUM(amount) as total FROM payments WHERE status = "completed"');
-  const lastWeekPayments = await db.get(`
-    SELECT COUNT(*) as count, SUM(amount) as total 
-    FROM payments 
-    WHERE status = "completed" AND paid_at > datetime('now', '-7 days')
-  `);
   
   const message =
     `📊 *Детальная статистика*\n\n` +
@@ -220,10 +209,6 @@ async function showStats(userId) {
     `• Кикнутых: ${stats.kicked}\n` +
     `• В штрафе: ${stats.penalty}\n` +
     `• Свой/Чужой: ${stats.entryPaid}/${stats.total - stats.entryPaid}\n\n` +
-    `💰 *Финансы:*\n` +
-    `• Всего платежей: ${totalPayments.count || 0}\n` +
-    `• Общая сумма: ${(totalPayments.total || 0).toFixed(2)} USDT\n` +
-    `• За 7 дней: ${lastWeekPayments.count || 0} платежей на ${(lastWeekPayments.total || 0).toFixed(2)} USDT\n\n` +
     `⚙️ *Настройки:*\n` +
     `• Вход: ${prices.entry_price} USDT\n` +
     `• Продление (1м): ${prices.member_price_1m} USDT\n` +
@@ -263,7 +248,6 @@ async function handleAdminInput(userId, text) {
   }
 
   if (state.action === 'awaiting_user_id') {
-    // Парсим: ID, Имя, Username, Дата, Свой/Чужой
     const parts = text.split(',').map(p => p.trim());
     if (parts.length !== 5) {
       await telegramService.sendMessage(userId, '❌ Неверный формат. Используйте: ID, Имя, Username, ГГГГ-ММ-ДД, + или -');
@@ -273,7 +257,6 @@ async function handleAdminInput(userId, text) {
     const [id, firstName, username, endDate, status] = parts;
     const entryPaid = status === '+';
     
-    // Валидация
     if (isNaN(parseInt(id))) {
       await telegramService.sendMessage(userId, '❌ ID должен быть числом');
       return true;
@@ -284,11 +267,9 @@ async function handleAdminInput(userId, text) {
       return true;
     }
     
-    // Проверяем, существует ли пользователь
     let user = await UserModel.getById(id);
     
     if (user) {
-      // Обновляем существующего
       const db = require('../database/db').getDb();
       await db.run(`
         UPDATE users 
@@ -298,7 +279,6 @@ async function handleAdminInput(userId, text) {
       
       await telegramService.sendMessage(userId, `✅ Пользователь ${id} обновлен!`);
     } else {
-      // Создаем нового
       const db = require('../database/db').getDb();
       await db.run(`
         INSERT INTO users (id, username, first_name, subscription_end, entry_paid, status, is_member)
