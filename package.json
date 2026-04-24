@@ -1,0 +1,22 @@
+{
+  "name": "crypto-bot-subscription",
+  "version": "1.0.0",
+  "description": "Telegram bot for paid channel subscriptions with manual payment",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.15.3",
+    "sqlite3": "^5.1.7",
+    "sqlite": "^5.1.1",
+    "node-cron": "^3.0.3",
+    "xlsx": "^0.18.5",
+    "dotenv": "^16.3.1",
+    "moment": "^2.29.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
