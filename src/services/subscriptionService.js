@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const UserModel = require('../database/models/User');
 const TelegramService = require('./telegramService');
-const SettingModel = require('./database/models/Setting');
+const SettingModel = require('../database/models/Setting');
 const moment = require('moment');
 
 let cronJob = null;
