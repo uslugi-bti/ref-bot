@@ -42,7 +42,6 @@ async function notifyAdminAboutPayment(userId, type, amount) {
   const user = await UserModel.getById(userId);
   const prices = await SettingModel.getAllPrices();
   
-  // Проверка на существование пользователя
   if (!user) {
     console.error(`User ${userId} not found in database`);
     await telegramService.sendMessage(
@@ -106,14 +105,12 @@ async function approvePayment(userId, type) {
   
   let newEndDate;
   let message = '';
-  let needInvite = false;
   
   switch (type) {
     case 'entry':
       newEndDate = moment().add(subscriptionDays, 'days').format('YYYY-MM-DD');
       await UserModel.updateSubscription(userId, newEndDate, true);
       message = `✅ Оплата подтверждена!\n\nВаш вход в клуб активирован!\nПодписка до: ${newEndDate}\n\n🎉 Добро пожаловать!`;
-      needInvite = true;
       break;
       
     case 'renew_1m':
@@ -129,17 +126,17 @@ async function approvePayment(userId, type) {
     case 'renew_with_penalty':
       newEndDate = await UserModel.extendSubscription(userId, subscriptionDays, true);
       message = `⚠️ Подписка восстановлена со штрафом\n\nНовая дата окончания: ${newEndDate}\n\nВ следующий раз не опаздывайте!`;
-      needInvite = true;
       break;
   }
   
   await telegramService.sendMessage(userId, message);
   
-  if (needInvite) {
-    const inviteLink = await telegramService.createInviteLink(userId);
-    if (inviteLink) {
-      await telegramService.sendInviteLink(userId, inviteLink);
-    }
+  // 🔥 ВСЕГДА отправляем новую ссылку при любом подтверждении оплаты
+  const inviteLink = await telegramService.createInviteLink(userId);
+  if (inviteLink) {
+    // Немного подождем перед отправкой ссылки, чтобы сообщения не слились
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await telegramService.sendInviteLink(userId, inviteLink);
   }
   
   await telegramService.sendMessage(
