@@ -12,27 +12,39 @@ function initUserHandler(bot) {
   telegramService = new TelegramService(bot);
 }
 
-// Функция для расчета штрафа (возвращает цену и тип)
-async function calculatePenaltyPrice(user) {
+// Функция для расчета полной цены (продление + штраф)
+async function calculateTotalPrice(user) {
   const prices = await SettingModel.getAllPrices();
   const price1m = parseFloat(prices.member_price_1m);
-  const penaltyPrice = parseFloat(prices.penalty_price);
   
   if (!user.subscription_end) {
-    return { price: price1m, hasPenalty: false };
+    return { total: price1m, penalty: 0, daysOverdue: 0, penaltyType: null };
   }
   
   const endDate = moment(user.subscription_end);
   const now = moment();
-  const daysOverdue = now.diff(endDate, 'days');
   
-  // Если просрочка <= 5 дней - только цена продления (без штрафа)
-  if (daysOverdue <= 5) {
-    return { price: price1m, hasPenalty: false };
+  // Если подписка еще активна
+  if (endDate.isAfter(now, 'day')) {
+    return { total: price1m, penalty: 0, daysOverdue: 0, penaltyType: null };
   }
   
-  // Если просрочка > 5 дней - штрафная цена (100 USDT фиксированно)
-  return { price: penaltyPrice, hasPenalty: true };
+  // Подписка истекла - считаем дни просрочки
+  const daysOverdue = now.diff(endDate, 'days');
+  
+  // Просрочка от 1 до 5 дней
+  if (daysOverdue >= 1 && daysOverdue <= 5) {
+    const penalty = parseFloat(prices.penalty_price_1);
+    return { total: price1m + penalty, penalty: penalty, daysOverdue: daysOverdue, penaltyType: 'light' };
+  }
+  
+  // Просрочка больше 5 дней
+  if (daysOverdue > 5) {
+    const penalty = parseFloat(prices.penalty_price_2);
+    return { total: price1m + penalty, penalty: penalty, daysOverdue: daysOverdue, penaltyType: 'heavy' };
+  }
+  
+  return { total: price1m, penalty: 0, daysOverdue: 0, penaltyType: null };
 }
 
 async function showUserMenu(userId) {
@@ -58,14 +70,11 @@ async function showUserMenu(userId) {
   }
 
   const isActive = user.status === 'active' && user.is_member === 1;
-  const isExpired = user.subscription_end && moment(user.subscription_end).isBefore(moment());
   const isKicked = user.status === 'kicked';
+  const isExpired = user.subscription_end && moment(user.subscription_end).isBefore(moment(), 'day');
   
-  // Рассчитываем штрафную цену если нужно
-  let penaltyInfo = { price: 0, hasPenalty: false };
-  if (isExpired || isKicked) {
-    penaltyInfo = await calculatePenaltyPrice(user);
-  }
+  // Рассчитываем полную цену
+  const priceInfo = await calculateTotalPrice(user);
 
   const entryPrice = parseFloat(prices.entry_price);
   const price1m = parseFloat(prices.member_price_1m);
@@ -81,21 +90,28 @@ async function showUserMenu(userId) {
       [{ text: `💰 Я оплатил (${entryPrice} USDT)`, callback_data: `submit_payment_entry` }]
     ];
   } 
-  else if (isExpired || isKicked) {
+  else if (isKicked || isExpired) {
     const endDate = user.subscription_end ? moment(user.subscription_end).format('DD.MM.YYYY') : 'неизвестно';
-    const daysOverdue = user.subscription_end ? moment().diff(moment(user.subscription_end), 'days') : 0;
     
-    if (!penaltyInfo.hasPenalty) {
-      // Просрочка до 5 дней - только цена продления
-      message = `⚠️ Ваша подписка истекла ${endDate} (просрочка ${daysOverdue} дней)\n\nУ вас есть возможность продлить подписку без штрафа до ${moment(user.subscription_end).add(5, 'days').format('DD.MM.YYYY')}.\n\n💰 Стоимость продления на ${subscriptionDays} дней: ${price1m} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nПосле оплаты нажмите кнопку "Я оплатил"`;
+    if (priceInfo.penaltyType === null && priceInfo.daysOverdue === 0) {
+      // Подписка еще активна (сегодня последний день)
+      message = `✅ Ваша подписка активна до ${endDate}\n\n💰 Продление на ${subscriptionDays} дней: ${price1m} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}`;
       keyboardButtons = [
         [{ text: `🔄 Продлить (${price1m} USDT)`, callback_data: `submit_payment_renew_1m` }]
       ];
-    } else {
-      // Просрочка более 5 дней - штрафная цена
-      message = `⚠️ Ваша подписка истекла ${endDate} (просрочка ${daysOverdue} дней)\n\n❗️ Вы пропустили льготный период 5 дней!\nТеперь стоимость продления составляет ${penaltyInfo.price} USDT (фиксированный штраф).\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nПосле оплаты нажмите кнопку "Я оплатил"`;
+    }
+    else if (priceInfo.penaltyType === 'light') {
+      // Просрочка до 5 дней
+      message = `⚠️ ВАС ИСКЛЮЧИЛИ ИЗ КАНАЛА!\n\nПодписка истекла ${endDate} (просрочка ${priceInfo.daysOverdue} дней)\n\nУ вас есть льготный период (до ${moment(user.subscription_end).add(5, 'days').format('DD.MM.YYYY')}) для восстановления:\n\n💰 Продление: ${price1m} USDT\n⚠️ Штраф: +${priceInfo.penalty} USDT\n💵 ИТОГО: ${priceInfo.total} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nПосле оплаты нажмите кнопку "Я оплатил"`;
       keyboardButtons = [
-        [{ text: `⚠️ Оплатить штраф (${penaltyInfo.price} USDT)`, callback_data: `submit_payment_penalty` }]
+        [{ text: `⚠️ Восстановить (${priceInfo.total} USDT)`, callback_data: `submit_payment_penalty_light` }]
+      ];
+    }
+    else if (priceInfo.penaltyType === 'heavy') {
+      // Просрочка более 5 дней
+      message = `❌ ВАС ИСКЛЮЧИЛИ ИЗ КАНАЛА!\n\nПодписка истекла ${endDate} (просрочка ${priceInfo.daysOverdue} дней)\n\n❗️ Льготный период ПРОШЁЛ!\n\n💰 Продление: ${price1m} USDT\n⚠️ Штраф: +${priceInfo.penalty} USDT\n💵 ИТОГО: ${priceInfo.total} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nПосле оплаты нажмите кнопку "Я оплатил"`;
+      keyboardButtons = [
+        [{ text: `⚠️ Восстановить (${priceInfo.total} USDT)`, callback_data: `submit_payment_penalty_heavy` }]
       ];
     }
   }
@@ -103,11 +119,11 @@ async function showUserMenu(userId) {
     const endDate = moment(user.subscription_end).format('DD.MM.YYYY');
     const daysLeft = moment(user.subscription_end).diff(moment(), 'days');
     
-    message = `✅ Ваш статус: АКТИВЕН\n\n👤 Вы в статусе "СВОЙ" (навсегда)\n📅 Подписка до: ${endDate} (осталось ${daysLeft} дней)\n\n💰 Цены продления:\n• На ${subscriptionDays} дней: ${price1m} USDT\n• На ${subscriptionDays * 3} дней: ${price3m} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nВыберите период продления и нажмите "Я оплатил" после перевода:`;
+    message = `✅ ВАШ СТАТУС: АКТИВЕН\n\n👤 Вы в статусе "СВОЙ" (навсегда)\n📅 Подписка до: ${endDate} (осталось ${daysLeft} дней)\n\n💰 ЦЕНЫ ПРОДЛЕНИЯ:\n• На ${subscriptionDays} дней: ${price1m} USDT\n• На ${subscriptionDays * 3} дней: ${price3m} USDT\n\n💳 Реквизиты для оплаты:\n${prices.payment_details}\n\nВыберите период:`;
     
     keyboardButtons = [
-      [{ text: `🔄 Продлить (1 мес — ${price1m} USDT)`, callback_data: `submit_payment_renew_1m` }],
-      [{ text: `🔄 Продлить (3 мес — ${price3m} USDT)`, callback_data: `submit_payment_renew_3m` }]
+      [{ text: `🔄 1 месяц — ${price1m} USDT`, callback_data: `submit_payment_renew_1m` }],
+      [{ text: `🔄 3 месяца — ${price3m} USDT`, callback_data: `submit_payment_renew_3m` }]
     ];
   }
 
@@ -126,7 +142,7 @@ async function handlePaymentSubmit(userId, paymentType) {
   if (!canRequest) {
     await telegramService.sendMessage(
       userId,
-      `⏳ Вы уже отправляли заявку на оплату недавно\n\nПожалуйста, подождите 10 минут перед повторной отправкой.\nЕсли вы уже оплатили, администратор скоро проверит вашу оплату.`
+      `⏳ Вы уже отправляли заявку на оплату недавно\n\nПодождите 10 минут.`
     );
     return;
   }
@@ -147,24 +163,9 @@ async function handlePaymentSubmit(userId, paymentType) {
       break;
     
     case 'renew_1m':
-      // Проверяем, нужно ли применить штраф
-      if (user && user.subscription_end && moment(user.subscription_end).isBefore(moment())) {
-        const daysOverdue = moment().diff(moment(user.subscription_end), 'days');
-        if (daysOverdue > 5) {
-          // Штрафной тариф
-          amount = parseFloat(prices.penalty_price);
-          type = 'renew_with_penalty';
-          typeDisplay = `восстановление со штрафом (фиксированный тариф)`;
-        } else {
-          amount = parseFloat(prices.member_price_1m);
-          type = 'renew_1m';
-          typeDisplay = `продление на ${subscriptionDays} дней`;
-        }
-      } else {
-        amount = parseFloat(prices.member_price_1m);
-        type = 'renew_1m';
-        typeDisplay = `продление на ${subscriptionDays} дней`;
-      }
+      amount = parseFloat(prices.member_price_1m);
+      type = 'renew_1m';
+      typeDisplay = `продление на ${subscriptionDays} дней`;
       break;
     
     case 'renew_3m':
@@ -173,10 +174,20 @@ async function handlePaymentSubmit(userId, paymentType) {
       typeDisplay = `продление на ${subscriptionDays * 3} дней`;
       break;
     
-    case 'penalty':
-      amount = parseFloat(prices.penalty_price);
-      type = 'renew_with_penalty';
-      typeDisplay = `восстановление со штрафом (фиксированный тариф)`;
+    case 'penalty_light':
+      const penalty1 = parseFloat(prices.penalty_price_1);
+      const price1m = parseFloat(prices.member_price_1m);
+      amount = price1m + penalty1;
+      type = 'renew_with_penalty_light';
+      typeDisplay = `восстановление со штрафом (льготный период)`;
+      break;
+    
+    case 'penalty_heavy':
+      const penalty2 = parseFloat(prices.penalty_price_2);
+      const price1m2 = parseFloat(prices.member_price_1m);
+      amount = price1m2 + penalty2;
+      type = 'renew_with_penalty_heavy';
+      typeDisplay = `восстановление со штрафом (просрочка >5 дней)`;
       break;
     
     default:
@@ -195,7 +206,7 @@ async function handlePaymentSubmit(userId, paymentType) {
   
   await telegramService.sendMessage(
     userId,
-    `✅ Заявка на оплату отправлена!\n\nТип: ${typeDisplay}\nСумма: ${amount} USDT\n\n⏳ Администратор проверит оплату в ближайшее время.\nПосле подтверждения вы получите уведомление и доступ к каналу.\n\n⚠️ Не отправляйте повторную заявку, чтобы не сбить очередь.`
+    `✅ ЗАЯВКА ОТПРАВЛЕНА!\n\nТип: ${typeDisplay}\nСумма: ${amount} USDT\n\n⏳ Администратор проверит оплату.\nПосле подтверждения получите ссылку.\n\n⚠️ Не отправляйте повторно!`
   );
   
   await notifyAdminAboutPayment(userId, type, amount);

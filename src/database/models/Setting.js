@@ -17,7 +17,7 @@ class SettingModel {
 
   static async getAllPrices() {
     const prices = {};
-    const keys = ['entry_price', 'member_price_1m', 'member_price_3m', 'penalty_price', 'subscription_days', 'payment_details'];
+    const keys = ['entry_price', 'member_price_1m', 'member_price_3m', 'penalty_price_1', 'penalty_price_2', 'subscription_days', 'payment_details'];
     
     for (const key of keys) {
       prices[key] = await this.get(key) || (key === 'payment_details' ? 'Реквизиты не заданы' : '0');
@@ -32,12 +32,10 @@ class SettingModel {
     }
   }
 
-  // Получить реквизиты
   static async getPaymentDetails() {
     return await this.get('payment_details') || 'Реквизиты не заданы';
   }
 
-  // Обновить реквизиты
   static async updatePaymentDetails(details) {
     await this.set('payment_details', details);
   }

@@ -63,24 +63,24 @@ async function setupBotCommands(bot) {
     const isAdmin = (userId === ADMIN_ID);
     
     let helpText = 
-      `🤖 *Помощь по боту*\n\n` +
+      `🤖 ПОМОЩЬ ПО БОТУ\n\n` +
       `Основные команды:\n` +
       `/start - Главное меню\n` +
       `/help - Эта справка\n` +
       `/cancel - Отмена текущего действия\n\n` +
-      `💰 *Как получить доступ:*\n` +
+      `💰 КАК ПОЛУЧИТЬ ДОСТУП:\n` +
       `1. Нажмите /start\n` +
       `2. Оплатите по реквизитам нужную сумму\n` +
       `3. Нажмите кнопку "Я оплатил"\n` +
       `4. Дождитесь подтверждения администратора\n\n` +
-      `❓ *Вопросы:*\n` +
+      `❓ Вопросы:\n` +
       `По всем вопросам обращайтесь к администратору.`;
     
     if (isAdmin) {
-      helpText += `\n\n👑 *Админ-команды:*\n• /start - Админ-панель`;
+      helpText += `\n\n👑 АДМИН-КОМАНДЫ:\n• /start - Админ-панель`;
     }
     
-    await ctx.reply(helpText, { parse_mode: 'Markdown' });
+    await ctx.reply(helpText);
   });
 
   // Обработка callback-запросов
@@ -99,7 +99,7 @@ async function setupBotCommands(bot) {
         const type = match[1];
         const targetUserId = parseInt(match[2]);
         await approvePayment(targetUserId, type);
-        await ctx.editMessageText(`✅ Оплата подтверждена для пользователя ${targetUserId}`, { parse_mode: 'Markdown' });
+        await ctx.editMessageText(`✅ Оплата подтверждена для пользователя ${targetUserId}`);
         return;
       }
       
@@ -107,7 +107,7 @@ async function setupBotCommands(bot) {
       if (data.match(/reject_payment_(\d+)/)) {
         const targetUserId = parseInt(data.match(/reject_payment_(\d+)/)[1]);
         await rejectPayment(targetUserId);
-        await ctx.editMessageText(`❌ Оплата отклонена для пользователя ${targetUserId}`, { parse_mode: 'Markdown' });
+        await ctx.editMessageText(`❌ Оплата отклонена для пользователя ${targetUserId}`);
         return;
       }
       
@@ -130,10 +130,9 @@ async function setupBotCommands(bot) {
       
       if (data === 'admin_import') {
         await ctx.reply(
-          `📥 *Импорт пользователей из Excel*\n\n` +
+          `📥 ИМПОРТ ПОЛЬЗОВАТЕЛЕЙ ИЗ EXCEL\n\n` +
           `Отправьте мне Excel файл в формате .xlsx\n\n` +
-          `Для отмены отправьте /cancel`,
-          { parse_mode: 'Markdown' }
+          `Для отмены отправьте /cancel`
         );
         adminStates.set(userId, { action: 'awaiting_import_file' });
         return;
@@ -170,31 +169,76 @@ async function setupBotCommands(bot) {
       }
       
       // Обработка изменения цен
-      const priceActions = {
-        'price_entry': { key: 'entry_price', name: 'Цену входа' },
-        'price_1m': { key: 'member_price_1m', name: 'Цену продления (1 месяц)' },
-        'price_3m': { key: 'member_price_3m', name: 'Цену продления (3 месяца)' },
-        'price_penalty': { key: 'penalty_price', name: 'Штраф' },
-        'price_days': { key: 'subscription_days', name: 'Срок подписки', isDays: true }
-      };
+      if (data === 'price_entry') {
+        adminStates.set(userId, { action: 'awaiting_price_change', priceKey: 'entry_price', priceName: 'Цену входа' });
+        await ctx.reply(`💰 Введите новую цену входа (в USDT):\n\nПример: 250`);
+        return;
+      }
       
-      if (priceActions[data]) {
-        const action = priceActions[data];
-        if (action.isDays) {
-          adminStates.set(userId, { action: 'awaiting_days_change' });
-          await ctx.reply('📆 Введите новый срок подписки (в днях):\n\nПример: `30`', { parse_mode: 'Markdown' });
-        } else {
-          adminStates.set(userId, { action: 'awaiting_price_change', priceKey: action.key, priceName: action.name });
-          await ctx.reply(`💰 Введите новую ${action.name} (в USDT):\n\nПример: \`250\``, { parse_mode: 'Markdown' });
-        }
+      if (data === 'price_1m') {
+        adminStates.set(userId, { action: 'awaiting_price_change', priceKey: 'member_price_1m', priceName: 'Цену продления (1 месяц)' });
+        await ctx.reply(`📅 Введите новую цену продления на 1 месяц (в USDT):\n\nПример: 50`);
+        return;
+      }
+      
+      if (data === 'price_3m') {
+        adminStates.set(userId, { action: 'awaiting_price_change', priceKey: 'member_price_3m', priceName: 'Цену продления (3 месяца)' });
+        await ctx.reply(`📅 Введите новую цену продления на 3 месяца (в USDT):\n\nПример: 120`);
+        return;
+      }
+      
+      if (data === 'price_penalty_1') {
+        adminStates.set(userId, { action: 'awaiting_price_change', priceKey: 'penalty_price_1', priceName: 'Штраф (1-5 дней)' });
+        await ctx.reply(`⚠️ Введите новый размер штрафа для периода 1-5 дней (в USDT):\n\nПример: 50`);
+        return;
+      }
+      
+      if (data === 'price_penalty_2') {
+        adminStates.set(userId, { action: 'awaiting_price_change', priceKey: 'penalty_price_2', priceName: 'Штраф (>5 дней)' });
+        await ctx.reply(`⚠️ Введите новый размер штрафа для периода после 5 дней (в USDT):\n\nПример: 100`);
+        return;
+      }
+      
+      if (data === 'price_days') {
+        adminStates.set(userId, { action: 'awaiting_days_change' });
+        await ctx.reply(`📆 Введите новый срок подписки (в днях):\n\nПример: 30`);
         return;
       }
     }
     
     // Пользовательские действия
-    if (data.match(/submit_payment_(.+)/)) {
-      const paymentType = data.match(/submit_payment_(.+)/)[1];
-      await handlePaymentSubmit(userId, paymentType);
+    if (data === 'pay_entry') {
+      await handlePaymentSubmit(userId, 'entry');
+      return;
+    }
+    
+    if (data === 'submit_payment_entry') {
+      await handlePaymentSubmit(userId, 'entry');
+      return;
+    }
+    
+    if (data === 'submit_payment_renew_1m') {
+      await handlePaymentSubmit(userId, 'renew_1m');
+      return;
+    }
+    
+    if (data === 'submit_payment_renew_3m') {
+      await handlePaymentSubmit(userId, 'renew_3m');
+      return;
+    }
+    
+    if (data === 'submit_payment_penalty_light') {
+      await handlePaymentSubmit(userId, 'penalty_light');
+      return;
+    }
+    
+    if (data === 'submit_payment_penalty_heavy') {
+      await handlePaymentSubmit(userId, 'penalty_heavy');
+      return;
+    }
+    
+    if (data === 'submit_payment_penalty') {
+      await handlePaymentSubmit(userId, 'penalty_light');
       return;
     }
   });
@@ -249,20 +293,20 @@ async function setupBotCommands(bot) {
       const results = await ExcelService.importUsers(buffer, bot);
       
       let resultMessage = 
-        `✅ *Импорт завершен!*\n\n` +
+        `✅ ИМПОРТ ЗАВЕРШЕН!\n\n` +
         `• Всего обработано: ${results.total}\n` +
         `• Успешно: ${results.success}\n` +
         `• Создано: ${results.created}\n` +
         `• Обновлено: ${results.updated}\n`;
       
       if (results.errors.length > 0) {
-        resultMessage += `\n⚠️ *Ошибки:*\n`;
+        resultMessage += `\n⚠️ ОШИБКИ:\n`;
         for (const error of results.errors.slice(0, 5)) {
           resultMessage += `• ${error}\n`;
         }
       }
       
-      await ctx.reply(resultMessage, { parse_mode: 'Markdown' });
+      await ctx.reply(resultMessage);
       adminStates.delete(userId);
       
     } catch (error) {

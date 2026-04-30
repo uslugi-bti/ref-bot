@@ -59,14 +59,15 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_payment_requests_status ON payment_requests(status);
   `);
 
-  const defaultPrices = {
+    const defaultPrices = {
     entry_price: process.env.ENTRY_PRICE || '250',
     member_price_1m: process.env.MEMBER_PRICE_1M || '50',
     member_price_3m: process.env.MEMBER_PRICE_3M || '120',
-    penalty_price: process.env.PENALTY_PRICE || '100',
+    penalty_price_1: process.env.PENALTY_PRICE_1 || '50',   // Штраф за первые 5 дней
+    penalty_price_2: process.env.PENALTY_PRICE_2 || '100',  // Штраф после 5 дней
     subscription_days: process.env.SUBSCRIPTION_DAYS || '30',
     payment_details: process.env.PAYMENT_DETAILS || 'USDT TRC20: TXxxx...\nКарта: 1234 5678...'
-  };
+    };
 
   for (const [key, value] of Object.entries(defaultPrices)) {
     await db.run(`

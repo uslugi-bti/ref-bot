@@ -161,7 +161,8 @@ async function showPriceEditor(userId) {
     `• Цена входа: ${prices.entry_price} USDT\n` +
     `• Продление (1 мес): ${prices.member_price_1m} USDT\n` +
     `• Продление (3 мес): ${prices.member_price_3m} USDT\n` +
-    `• Штраф: ${prices.penalty_price} USDT\n` +
+    `• Штраф (1-5 дней): +${prices.penalty_price_1} USDT\n` +
+    `• Штраф (>5 дней): +${prices.penalty_price_2} USDT\n` +
     `• Срок подписки: ${prices.subscription_days} дней\n\n` +
     `Выберите параметр для изменения:`;
 
@@ -171,7 +172,8 @@ async function showPriceEditor(userId) {
         [{ text: '💰 Цена входа', callback_data: 'price_entry' }],
         [{ text: '📅 Продление (1 мес)', callback_data: 'price_1m' }],
         [{ text: '📅 Продление (3 мес)', callback_data: 'price_3m' }],
-        [{ text: '⚠️ Штраф', callback_data: 'price_penalty' }],
+        [{ text: '⚠️ Штраф (1-5 дней)', callback_data: 'price_penalty_1' }],
+        [{ text: '⚠️ Штраф (>5 дней)', callback_data: 'price_penalty_2' }],
         [{ text: '📆 Срок подписки (дней)', callback_data: 'price_days' }],
         [{ text: '🔙 В меню', callback_data: 'admin_back' }]
       ]
