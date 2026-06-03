@@ -15,6 +15,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
   await bot.launch();
   console.log('🤖 БОТ ЗАПУЩЕН');
   console.log('💳 Система оплаты: ручная (подтверждение админом)');
+  console.log(`🕐 Текущее время UTC: ${new Date().toUTCString()}`);
 })();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
